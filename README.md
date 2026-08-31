@@ -37,8 +37,8 @@ browser or send to someone else.
 Requires Python 3.9+.
 
 ```bash
-git clone https://github.com/<your-username>/dataqual.git
-cd dataqual
+git clone https://github.com/basilmushakij/dqlint.git
+cd dqlint
 pip install .
 ```
 
