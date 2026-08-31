@@ -70,12 +70,3 @@ for column-level details.
 
 `--full` adds a per-column table (type, missing, unique), duplicate-row evidence,
 which columns are empty or constant, and the IQR values behind possible outliers.
-
-## Python API
-
-```python
-from dataqual import analyze, load_file
-
-report = analyze(load_file("data.csv"), file_path="data.csv")
-report.missing_column_count   # e.g. gate a pipeline on this
-```
