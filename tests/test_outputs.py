@@ -85,6 +85,14 @@ def test_cli_default_and_full_modes(tmp_path, capsys):
     assert "POSSIBLE OUTLIERS" in full
 
 
+def test_cli_reports_a_clean_error_for_a_missing_file(capsys):
+    assert main(["does_not_exist.csv"]) == 1
+    error = capsys.readouterr().err
+
+    assert "File not found" in error
+    assert "Traceback" not in error
+
+
 def test_cli_writes_json_and_html_without_overwriting_input(tmp_path, capsys):
     dataset = tmp_path / "sample.csv"
     json_path = tmp_path / "report.json"

@@ -23,6 +23,15 @@ def test_dataset_shape_and_file_size_are_reported():
     assert report.file_size_bytes == 1234
 
 
+def test_zero_missing_values_are_reported_as_zero():
+    report = analyze(pd.DataFrame({"a": [1, 2, 3]}))
+    a = column(report, "a")
+
+    assert a.missing_count == 0
+    assert a.missing_percentage == 0.0
+    assert report.missing_column_count == 0
+
+
 def test_missing_values_are_counted_without_a_threshold():
     report = analyze(pd.DataFrame({"a": [1, None, 3, None], "b": [1, 2, 3, 4]}))
     a = column(report, "a")
