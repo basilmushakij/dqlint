@@ -127,3 +127,17 @@ def test_report_json_structure_contains_only_factual_measurements():
     assert data["quality"]["missing_columns"] == 1
     assert data["columns"][0]["missing_count"] == 1
     assert "score" not in str(data).lower()
+
+
+def test_duplicate_column_names_raise_a_clear_error():
+    dataframe = pd.DataFrame([[1, 2, 3]], columns=["a", "a", "b"])
+
+    with pytest.raises(ValueError, match="Duplicate column names"):
+        analyze(dataframe)
+
+
+def test_outlier_method_text_is_ascii_safe():
+    report = analyze(pd.DataFrame({"amount": [1, 2, 3, 4, 100]}))
+    outliers = column(report, "amount").outliers
+
+    assert outliers.method.isascii()

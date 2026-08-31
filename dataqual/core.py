@@ -24,7 +24,7 @@ class DataLoadError(Exception):
 
 @dataclass
 class OutlierReport:
-    """Values outside the standard 1.5 × IQR bounds for one numeric column."""
+    """Values outside the standard 1.5x IQR bounds for one numeric column."""
 
     q1: float
     q3: float
@@ -34,7 +34,7 @@ class OutlierReport:
     count: int
     value_count: int
     percentage: float
-    method: str = "IQR (Q1 - 1.5 × IQR to Q3 + 1.5 × IQR)"
+    method: str = "IQR (Q1 - 1.5x IQR to Q3 + 1.5x IQR)"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -202,6 +202,13 @@ def analyze(
     file_size_bytes: Optional[int] = None,
 ) -> DataQualityReport:
     """Inspect a DataFrame using direct, reproducible pandas measurements."""
+    duplicate_labels = dataframe.columns[dataframe.columns.duplicated()].unique()
+    if len(duplicate_labels):
+        raise ValueError(
+            "Duplicate column names are not supported: "
+            f"{', '.join(str(label) for label in duplicate_labels)}"
+        )
+
     row_count, column_count = dataframe.shape
     if file_size_bytes is None and os.path.isfile(file_path):
         file_size_bytes = os.path.getsize(file_path)

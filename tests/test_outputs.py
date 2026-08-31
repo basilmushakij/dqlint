@@ -46,6 +46,7 @@ def test_full_terminal_output_contains_missing_duplicate_and_iqr_evidence():
     assert "POSSIBLE OUTLIERS" in output
     assert "Lower bound: -1" in output
     assert "Constant columns  1" in output
+    assert output.isascii()  # must stay printable on a non-UTF-8 stdout
 
 
 def test_html_escapes_user_controlled_column_names():
