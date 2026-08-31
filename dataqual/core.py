@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -36,19 +36,6 @@ class OutlierReport:
     percentage: float
     method: str = "IQR (Q1 - 1.5x IQR to Q3 + 1.5x IQR)"
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "method": self.method,
-            "q1": self.q1,
-            "q3": self.q3,
-            "iqr": self.iqr,
-            "lower_bound": self.lower_bound,
-            "upper_bound": self.upper_bound,
-            "count": self.count,
-            "value_count": self.value_count,
-            "percentage": self.percentage,
-        }
-
 
 @dataclass
 class ColumnReport:
@@ -60,18 +47,6 @@ class ColumnReport:
     is_empty: bool
     is_constant: bool
     outliers: Optional[OutlierReport]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "dtype": self.dtype,
-            "missing_count": self.missing_count,
-            "missing_percentage": self.missing_percentage,
-            "unique_count": self.unique_count,
-            "is_empty": self.is_empty,
-            "is_constant": self.is_constant,
-            "outliers": self.outliers.to_dict() if self.outliers else None,
-        }
 
 
 @dataclass
@@ -103,26 +78,6 @@ class DataQualityReport:
     @property
     def constant_column_count(self) -> int:
         return sum(column.is_constant for column in self.columns)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "dataset": {
-                "file": self.file_name,
-                "path": self.file_path,
-                "size_bytes": self.file_size_bytes,
-                "rows": self.row_count,
-                "columns": self.column_count,
-            },
-            "columns": [column.to_dict() for column in self.columns],
-            "quality": {
-                "missing_columns": self.missing_column_count,
-                "duplicate_rows": self.duplicate_row_count,
-                "duplicate_row_percentage": self.duplicate_row_percentage,
-                "outlier_columns": self.outlier_column_count,
-                "empty_columns": self.empty_column_count,
-                "constant_columns": self.constant_column_count,
-            },
-        }
 
 
 def load_file(path: str) -> pd.DataFrame:

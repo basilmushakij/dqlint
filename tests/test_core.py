@@ -130,16 +130,6 @@ def test_empty_dataframe_has_no_empty_or_constant_columns():
     assert math.isclose(report.duplicate_row_percentage, 0.0)
 
 
-def test_report_json_structure_contains_only_factual_measurements():
-    report = analyze(pd.DataFrame({"value": [1, None]}), file_path="values.csv")
-    data = report.to_dict()
-
-    assert data["dataset"]["file"] == "values.csv"
-    assert data["quality"]["missing_columns"] == 1
-    assert data["columns"][0]["missing_count"] == 1
-    assert "score" not in str(data).lower()
-
-
 def test_duplicate_column_names_raise_a_clear_error():
     dataframe = pd.DataFrame([[1, 2, 3]], columns=["a", "a", "b"])
 

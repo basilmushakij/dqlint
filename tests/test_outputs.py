@@ -1,10 +1,7 @@
-import json
-
 import pandas as pd
 
 from dataqual.cli import main
 from dataqual.core import analyze
-from dataqual.report import save_json
 from dataqual.terminal import render
 
 
@@ -49,18 +46,6 @@ def test_full_terminal_output_contains_missing_duplicate_and_iqr_evidence():
     assert output.isascii()  # must stay printable on a non-UTF-8 stdout
 
 
-def test_json_serializes_the_canonical_report(tmp_path):
-    path = tmp_path / "report.json"
-    report = analyze(pd.DataFrame({"value": [1, None]}), file_path="values.csv")
-
-    save_json(report, str(path))
-    data = json.loads(path.read_text(encoding="utf-8"))
-
-    assert data["dataset"]["rows"] == 2
-    assert data["columns"][0]["missing_count"] == 1
-    assert data["quality"]["missing_columns"] == 1
-
-
 def test_cli_default_and_full_modes(tmp_path, capsys):
     dataset = tmp_path / "sample.csv"
     _write_csv(dataset)
@@ -82,17 +67,3 @@ def test_cli_reports_a_clean_error_for_a_missing_file(capsys):
 
     assert "File not found" in error
     assert "Traceback" not in error
-
-
-def test_cli_writes_json_without_overwriting_input(tmp_path, capsys):
-    dataset = tmp_path / "sample.csv"
-    json_path = tmp_path / "report.json"
-    _write_csv(dataset)
-
-    assert main([str(dataset), "--json", str(json_path)]) == 0
-    capsys.readouterr()
-    assert json.loads(json_path.read_text(encoding="utf-8"))["dataset"]["rows"] == 5
-
-    assert main([str(dataset), "--json", str(dataset)]) == 1
-    error = capsys.readouterr().err
-    assert "must not overwrite the input dataset" in error

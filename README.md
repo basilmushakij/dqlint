@@ -20,7 +20,6 @@ pip install .
 ```bash
 dqlint data.csv                          # concise summary
 dqlint data.csv --full                   # every column, plus duplicate/outlier evidence
-dqlint data.csv --json report.json       # also write the report as JSON
 ```
 
 Optional formats:
@@ -77,5 +76,4 @@ from dataqual import analyze, load_file
 
 report = analyze(load_file("data.csv"), file_path="data.csv")
 report.missing_column_count   # e.g. gate a pipeline on this
-report.to_dict()              # same data the --json output writes
 ```
