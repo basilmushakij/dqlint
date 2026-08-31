@@ -21,7 +21,7 @@ pip install .
 dqlint data.csv                          # concise summary
 dqlint data.csv --full                   # every column, plus duplicate/outlier evidence
 dqlint data.csv --columns                # just the column names, one per line
-dqlint data.csv --column price           # full detail for just one column
+dqlint data.csv --column columnname      # full detail for just one column
 ```
 
 Optional formats:
