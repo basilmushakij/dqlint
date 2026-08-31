@@ -62,5 +62,4 @@ Use:
 for column-level details.
 ```
 
-`--full` adds a per-column table (type, missing, unique), duplicate-row evidence,
-which columns are empty or constant, and the IQR values behind possible outliers.
+
