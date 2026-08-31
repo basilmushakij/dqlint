@@ -64,3 +64,13 @@ for column-level details.
 ```
 
 `--full` adds per-column missing/unique counts, duplicate-row evidence, and the IQR values behind possible outliers.
+
+## Python API
+
+```python
+from dataqual import analyze, load_file
+
+report = analyze(load_file("data.csv"), file_path="data.csv")
+report.missing_column_count   # e.g. gate a pipeline on this
+report.to_dict()              # same data the --json output writes
+```
