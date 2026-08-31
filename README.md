@@ -68,7 +68,8 @@ Use:
 for column-level details.
 ```
 
-`--full` adds per-column missing/unique counts, duplicate-row evidence, and the IQR values behind possible outliers.
+`--full` adds a per-column table (type, missing, unique), duplicate-row evidence,
+which columns are empty or constant, and the IQR values behind possible outliers.
 
 ## Python API
 

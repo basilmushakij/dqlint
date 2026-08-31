@@ -114,7 +114,9 @@ def test_actual_pandas_dtypes_are_reported_without_inference():
     assert column(report, "floating").dtype == "float64"
     assert column(report, "text").dtype == "object"
     assert column(report, "flag").dtype == "bool"
-    assert column(report, "timestamp").dtype == "datetime64[ns]"
+    # Pandas' default datetime resolution (ns vs us) varies by version; what
+    # matters is that dqlint reports whatever pandas itself reports, verbatim.
+    assert column(report, "timestamp").dtype == str(dataframe["timestamp"].dtype)
     assert column(report, "text").outliers is None
 
 
