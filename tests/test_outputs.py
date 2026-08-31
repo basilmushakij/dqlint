@@ -2,7 +2,7 @@ import pandas as pd
 
 from dataqual.cli import main
 from dataqual.core import analyze
-from dataqual.terminal import render
+from dataqual.terminal import render, render_column
 
 
 def _write_csv(path):
@@ -67,3 +67,41 @@ def test_cli_reports_a_clean_error_for_a_missing_file(capsys):
 
     assert "File not found" in error
     assert "Traceback" not in error
+
+
+def test_render_column_shows_outlier_detail_for_a_numeric_column():
+    report = analyze(pd.DataFrame({"amount": [1, 2, 3, 4, 100]}))
+    output = render_column(next(c for c in report.columns if c.name == "amount"))
+
+    assert "Name       amount" in output
+    assert "Type       int64" in output
+    assert "Lower bound: -1" in output
+    assert "Count: 1 / 5 (20.00%)" in output
+
+
+def test_render_column_marks_outliers_not_applicable_for_non_numeric():
+    report = analyze(pd.DataFrame({"label": ["a", "b", "c"]}))
+    output = render_column(next(c for c in report.columns if c.name == "label"))
+
+    assert "Not applicable (non-numeric column)." in output
+
+
+def test_cli_column_flag_shows_one_column(tmp_path, capsys):
+    dataset = tmp_path / "sample.csv"
+    _write_csv(dataset)
+
+    assert main([str(dataset), "--column", "amount"]) == 0
+    output = capsys.readouterr().out
+    assert "Name       amount" in output
+    assert "COLUMN OVERVIEW" not in output
+
+
+def test_cli_column_flag_reports_a_clean_error_for_an_unknown_column(tmp_path, capsys):
+    dataset = tmp_path / "sample.csv"
+    _write_csv(dataset)
+
+    assert main([str(dataset), "--column", "bogus"]) == 1
+    error = capsys.readouterr().err
+
+    assert "No column named 'bogus'" in error
+    assert "amount" in error

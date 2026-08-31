@@ -7,7 +7,7 @@ from typing import Optional, Sequence
 
 from . import __version__
 from .core import DataLoadError, analyze, load_file
-from .terminal import render
+from .terminal import render, render_column
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -17,6 +17,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("file_path", help="CSV, TSV, XLSX, JSON, or Parquet dataset")
     parser.add_argument("--full", action="store_true", help="Show column-level details.")
+    parser.add_argument("--column", metavar="NAME", help="Show detail for one column only.")
     parser.add_argument("--version", action="version", version=f"dqlint {__version__}")
     return parser
 
@@ -42,6 +43,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except DataLoadError as error:
         _print_error(error.title, error.reason, error.install)
         return 1
+
+    if args.column:
+        column = next((c for c in report.columns if c.name == args.column), None)
+        if column is None:
+            available = ", ".join(c.name for c in report.columns)
+            _print_error(
+                "Unable to find column.",
+                f"No column named '{args.column}'. Available columns: {available}",
+            )
+            return 1
+        print(render_column(column))
+        return 0
 
     print(render(report, full=args.full))
     return 0

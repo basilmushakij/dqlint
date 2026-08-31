@@ -50,6 +50,32 @@ def _outlier_lines(column: ColumnReport, outliers: OutlierReport) -> list[str]:
     ]
 
 
+def render_column(column: ColumnReport) -> str:
+    """Return the full factual detail for a single column."""
+    lines = ["dqlint", RULE]
+    lines.extend(
+        [
+            "",
+            "COLUMN",
+            f"  Name       {column.name}",
+            f"  Type       {column.dtype}",
+            f"  Missing    {column.missing_count:,} ({_format_percent(column.missing_percentage)})",
+            f"  Unique     {column.unique_count:,}",
+            f"  Empty      {'Yes' if column.is_empty else 'No'}",
+            f"  Constant   {'Yes' if column.is_constant else 'No'}",
+        ]
+    )
+    lines.extend(_section("POSSIBLE OUTLIERS"))
+    if column.outliers is None:
+        lines.append("  Not applicable (non-numeric column).")
+    elif column.outliers.count == 0:
+        lines.append("  No values outside the IQR bounds detected.")
+    else:
+        lines.extend(_outlier_lines(column, column.outliers)[1:-1])
+
+    return "\n".join(lines)
+
+
 def render(report: DataQualityReport, full: bool = False) -> str:
     """Return the concise default report, with factual detail in full mode."""
     lines = ["dqlint", RULE]
