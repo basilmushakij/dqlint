@@ -105,3 +105,13 @@ def test_cli_column_flag_reports_a_clean_error_for_an_unknown_column(tmp_path, c
 
     assert "No column named 'bogus'" in error
     assert "amount" in error
+
+
+def test_cli_columns_flag_lists_names_only(tmp_path, capsys):
+    dataset = tmp_path / "sample.csv"
+    _write_csv(dataset)
+
+    assert main([str(dataset), "--columns"]) == 0
+    output = capsys.readouterr().out
+
+    assert output == "amount\ncountry\nempty\n"

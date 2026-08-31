@@ -17,6 +17,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("file_path", help="CSV, TSV, XLSX, JSON, or Parquet dataset")
     parser.add_argument("--full", action="store_true", help="Show column-level details.")
+    parser.add_argument("--columns", action="store_true", help="List column names only, one per line.")
     parser.add_argument("--column", metavar="NAME", help="Show detail for one column only.")
     parser.add_argument("--version", action="version", version=f"dqlint {__version__}")
     return parser
@@ -43,6 +44,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except DataLoadError as error:
         _print_error(error.title, error.reason, error.install)
         return 1
+
+    if args.columns:
+        for column in report.columns:
+            print(column.name)
+        return 0
 
     if args.column:
         column = next((c for c in report.columns if c.name == args.column), None)
