@@ -4,7 +4,7 @@ import pandas as pd
 
 from dataqual.cli import main
 from dataqual.core import analyze
-from dataqual.report import build_html, save_json
+from dataqual.report import save_json
 from dataqual.terminal import render
 
 
@@ -49,15 +49,6 @@ def test_full_terminal_output_contains_missing_duplicate_and_iqr_evidence():
     assert output.isascii()  # must stay printable on a non-UTF-8 stdout
 
 
-def test_html_escapes_user_controlled_column_names():
-    report = analyze(pd.DataFrame({"<script>alert(1)</script>": [1, 2]}))
-    output = build_html(report)
-
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in output
-    assert "<script>alert(1)</script>" not in output
-    assert "score" not in output.lower()
-
-
 def test_json_serializes_the_canonical_report(tmp_path):
     path = tmp_path / "report.json"
     report = analyze(pd.DataFrame({"value": [1, None]}), file_path="values.csv")
@@ -93,16 +84,14 @@ def test_cli_reports_a_clean_error_for_a_missing_file(capsys):
     assert "Traceback" not in error
 
 
-def test_cli_writes_json_and_html_without_overwriting_input(tmp_path, capsys):
+def test_cli_writes_json_without_overwriting_input(tmp_path, capsys):
     dataset = tmp_path / "sample.csv"
     json_path = tmp_path / "report.json"
-    html_path = tmp_path / "report.html"
     _write_csv(dataset)
 
-    assert main([str(dataset), "--json", str(json_path), "--html", str(html_path)]) == 0
+    assert main([str(dataset), "--json", str(json_path)]) == 0
     capsys.readouterr()
     assert json.loads(json_path.read_text(encoding="utf-8"))["dataset"]["rows"] == 5
-    assert "dqlint" in html_path.read_text(encoding="utf-8")
 
     assert main([str(dataset), "--json", str(dataset)]) == 1
     error = capsys.readouterr().err

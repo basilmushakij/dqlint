@@ -6,6 +6,4 @@ dist/
 .pytest_cache/
 .venv/
 venv/
-*.html
-!examples/*.html
 .DS_Store

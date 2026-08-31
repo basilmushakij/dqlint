@@ -20,7 +20,6 @@ pip install .
 ```bash
 dqlint data.csv                          # concise summary
 dqlint data.csv --full                   # every column, plus duplicate/outlier evidence
-dqlint data.csv --html report.html       # also write a self-contained HTML report
 dqlint data.csv --json report.json       # also write the report as JSON
 ```
 

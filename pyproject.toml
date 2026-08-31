@@ -28,7 +28,7 @@ target-version = "py39"
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
-ignore = ["E501"] # Embedded deterministic HTML keeps long template lines readable.
+ignore = ["E501"] # Long f-string report lines stay more readable unwrapped.
 
 [tool.setuptools.packages.find]
 include = ["dataqual*"]
