@@ -19,19 +19,20 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--full", action="store_true", help="Show column-level details.")
     parser.add_argument("--columns", action="store_true", help="List column names only, one per line.")
     parser.add_argument("--column", metavar="NAME", help="Show detail for one column only.")
+    parser.add_argument("--encoding", metavar="NAME", help="Text encoding for CSV/TSV/JSON (default: utf-8).")
     parser.add_argument("--version", action="version", version=f"dqlint {__version__}")
     return parser
 
 
-def _print_error(title: str, reason: str, install: Optional[str] = None) -> None:
+def _print_error(title: str, reason: str, hint: Optional[str] = None) -> None:
     print(f"ERROR: {title}", file=sys.stderr)
     print("", file=sys.stderr)
     print("Reason:", file=sys.stderr)
     print(reason, file=sys.stderr)
-    if install:
+    if hint:
         print("", file=sys.stderr)
-        print("Install:", file=sys.stderr)
-        print(install, file=sys.stderr)
+        print("Try:", file=sys.stderr)
+        print(hint, file=sys.stderr)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -39,10 +40,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = _parser().parse_args(argv)
 
     try:
-        dataframe = load_file(args.file_path)
+        dataframe = load_file(args.file_path, encoding=args.encoding)
         report = analyze(dataframe, file_path=args.file_path)
     except DataLoadError as error:
-        _print_error(error.title, error.reason, error.install)
+        _print_error(error.title, error.reason, error.hint)
         return 1
 
     if args.columns:

@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import pytest
 
-from dataqual.core import analyze
+from dataqual.core import DataLoadError, analyze, load_file
 
 
 def column(report, name):
@@ -142,3 +142,23 @@ def test_outlier_method_text_is_ascii_safe():
     outliers = column(report, "amount").outliers
 
     assert outliers.method.isascii()
+
+
+def test_non_utf8_csv_raises_a_clear_error_suggesting_encoding(tmp_path):
+    path = tmp_path / "bad_encoding.csv"
+    path.write_bytes(b"name,note\r\nAlice,test\x97value\r\n")
+
+    with pytest.raises(DataLoadError) as excinfo:
+        load_file(str(path))
+
+    assert "utf-8" in excinfo.value.reason
+    assert "--encoding" in excinfo.value.hint
+
+
+def test_load_file_accepts_an_explicit_encoding(tmp_path):
+    path = tmp_path / "cp1252.csv"
+    path.write_bytes(b"name,note\r\nAlice,test\x97value\r\n")
+
+    dataframe = load_file(str(path), encoding="cp1252")
+
+    assert dataframe["note"][0] == "test—value"

@@ -115,3 +115,16 @@ def test_cli_columns_flag_lists_names_only(tmp_path, capsys):
     output = capsys.readouterr().out
 
     assert output == "amount\ncountry\nempty\n"
+
+
+def test_cli_encoding_flag_reads_a_non_utf8_file(tmp_path, capsys):
+    dataset = tmp_path / "cp1252.csv"
+    dataset.write_bytes(b"name,note\r\nAlice,test\x97value\r\n")
+
+    assert main([str(dataset)]) == 1
+    error = capsys.readouterr().err
+    assert "--encoding" in error
+
+    assert main([str(dataset), "--encoding", "cp1252"]) == 0
+    output = capsys.readouterr().out
+    assert "DATASET" in output

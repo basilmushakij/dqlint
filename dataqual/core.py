@@ -15,11 +15,11 @@ IQR_MULTIPLIER = 1.5
 class DataLoadError(Exception):
     """A short, user-facing error while reading an input dataset."""
 
-    def __init__(self, title: str, reason: str, install: Optional[str] = None):
+    def __init__(self, title: str, reason: str, hint: Optional[str] = None):
         super().__init__(reason)
         self.title = title
         self.reason = reason
-        self.install = install
+        self.hint = hint
 
 
 @dataclass
@@ -80,7 +80,7 @@ class DataQualityReport:
         return sum(column.is_constant for column in self.columns)
 
 
-def load_file(path: str) -> pd.DataFrame:
+def load_file(path: str, encoding: Optional[str] = None) -> pd.DataFrame:
     """Load a supported table without inferring or changing its schema."""
     source = Path(path)
     if not source.is_file():
@@ -95,13 +95,13 @@ def load_file(path: str) -> pd.DataFrame:
 
     try:
         if extension == ".csv":
-            return pd.read_csv(source)
+            return pd.read_csv(source, encoding=encoding)
         if extension == ".tsv":
-            return pd.read_csv(source, sep="\t")
+            return pd.read_csv(source, sep="\t", encoding=encoding)
         if extension == ".xlsx":
             return pd.read_excel(source)
         if extension == ".json":
-            return pd.read_json(source)
+            return pd.read_json(source, encoding=encoding)
         return pd.read_parquet(source)
     except (ImportError, ModuleNotFoundError) as error:
         if extension == ".xlsx":
@@ -120,6 +120,13 @@ def load_file(path: str) -> pd.DataFrame:
     except pd.errors.EmptyDataError as error:
         raise DataLoadError(
             "Unable to read dataset.", "File contains no tabular data."
+        ) from error
+    except UnicodeDecodeError as error:
+        used = encoding or "utf-8"
+        raise DataLoadError(
+            "Unable to read dataset.",
+            f"File is not valid {used}: {error}",
+            "--encoding cp1252 (or another encoding matching the file's actual source)",
         ) from error
     except Exception as error:
         raise DataLoadError("Unable to read dataset.", str(error)) from error
