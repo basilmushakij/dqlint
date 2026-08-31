@@ -1,11 +1,5 @@
 # dqlint
 
-Quick, factual first look at a dataset before you clean, transform, or model it.
-
-`dqlint` reports observations -- rows, columns, dtypes, missing values, duplicates,
-possible outliers, empty/constant columns. It does not determine whether your data
-is correct, incorrect, or usable; it does not modify your file. You decide what
-the numbers mean.
 
 ## Install
 
