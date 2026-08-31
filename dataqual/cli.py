@@ -1,85 +1,80 @@
-"""
-dataqual.cli
-============
-Command-line entry point.
-
-Usage:
-    dataqual data.csv                          # shortcut for `check`
-    dataqual check data.csv
-    dataqual check data.csv --full
-    dataqual check data.csv --html report.html
-    dataqual check data.csv --html report.html --open
-"""
+"""Command-line entry point for dqlint."""
 from __future__ import annotations
 
+import argparse
 import sys
-import webbrowser
-
-import click
-from rich.console import Console
+from pathlib import Path
+from typing import Optional, Sequence
 
 from . import __version__
-from .core import load_file, analyze
+from .core import DataLoadError, analyze, load_file
+from .report import save_html, save_json
 from .terminal import render
-from .report import save_html
 
 
-class DefaultGroup(click.Group):
-    """Lets `dataqual <file>` work as a shortcut for `dataqual check <file>`,
-    so you don't have to type the subcommand on every run."""
-
-    default_command = "check"
-
-    def resolve_command(self, ctx, args):
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError:
-            return super().resolve_command(ctx, [self.default_command, *args])
-
-
-@click.group(cls=DefaultGroup)
-@click.version_option(version=__version__, prog_name="dataqual")
-def main() -> None:
-    """dataqual -- a data quality checker for CSV / Excel / JSON / Parquet files.
-
-    Quick start:
-
-        dataqual data.csv
-    """
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="dqlint",
+        description="Quickly inspect factual properties of a dataset.",
+    )
+    parser.add_argument("file_path", help="CSV, TSV, XLSX, JSON, or Parquet dataset")
+    parser.add_argument("--full", action="store_true", help="Show column-level details.")
+    parser.add_argument("--html", metavar="PATH", help="Write a self-contained HTML report.")
+    parser.add_argument("--json", metavar="PATH", help="Write the report as JSON.")
+    parser.add_argument("--version", action="version", version=f"dqlint {__version__}")
+    return parser
 
 
-@main.command()
-@click.argument("file_path", type=str)
-@click.option("--html", "html_path", type=str, default=None,
-              help="Save an HTML dashboard to this path.")
-@click.option("--open", "open_browser", is_flag=True,
-              help="Open the HTML dashboard in your browser once it's generated.")
-@click.option("--full", "full", is_flag=True,
-              help="Show stats for every column, not just the flagged ones.")
-@click.option("--quiet", "-q", is_flag=True,
-              help="Don't print to the terminal (useful with --html, or in scripts).")
-def check(file_path: str, html_path: str | None, open_browser: bool, full: bool, quiet: bool) -> None:
-    """Check the data quality of FILE_PATH."""
-    console = Console()
+def _check_output_paths(input_path: str, outputs: Sequence[Optional[str]]) -> Optional[str]:
+    source = Path(input_path).resolve()
+    paths = [Path(path).resolve() for path in outputs if path]
+    if source in paths:
+        return "An output path must not overwrite the input dataset."
+    if len(paths) != len(set(paths)):
+        return "HTML and JSON output paths must be different."
+    return None
+
+
+def _print_error(title: str, reason: str, install: Optional[str] = None) -> None:
+    print(f"ERROR: {title}", file=sys.stderr)
+    print("", file=sys.stderr)
+    print("Reason:", file=sys.stderr)
+    print(reason, file=sys.stderr)
+    if install:
+        print("", file=sys.stderr)
+        print("Install:", file=sys.stderr)
+        print(install, file=sys.stderr)
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Run dqlint and return a process-style exit code for easy testing."""
+    args = _parser().parse_args(argv)
+    output_error = _check_output_paths(args.file_path, (args.html, args.json))
+    if output_error:
+        _print_error("Unable to write report.", output_error)
+        return 1
+
     try:
-        df = load_file(file_path)
-        report = analyze(df, file_path=file_path)
-    except Exception as e:
-        console.print(f"[bold red]Error:[/bold red] {e}")
-        sys.exit(1)
+        dataframe = load_file(args.file_path)
+        report = analyze(dataframe, file_path=args.file_path)
+        if args.html:
+            save_html(report, args.html)
+        if args.json:
+            save_json(report, args.json)
+    except DataLoadError as error:
+        _print_error(error.title, error.reason, error.install)
+        return 1
+    except OSError as error:
+        _print_error("Unable to write report.", str(error))
+        return 1
 
-    if not quiet:
-        render(report, console=console, full=full)
-
-    if html_path:
-        save_html(report, html_path)
-        console.print(f"[bold green]Saved[/bold green] HTML dashboard to: [underline]{html_path}[/underline]")
-        if open_browser:
-            webbrowser.open(f"file://{html_path}")
-
-    # Exit code reflects data quality, so this can gate a CI pipeline.
-    sys.exit(0 if report.overall_score >= 60 else 2)
+    print(render(report, full=args.full))
+    if args.html:
+        print(f"\nHTML report written: {args.html}")
+    if args.json:
+        print(f"JSON report written: {args.json}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

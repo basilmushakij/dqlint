@@ -1,119 +1,145 @@
-"""
-dataqual.terminal
-==================
-Renders a DataQualityReport in the terminal.
-
-Design: most people running this don't want to read a stats table for
-every column on every run -- they want to know, at a glance, whether the
-file is fine and what to look at if it isn't. So the default view is a
-short, linter-style summary (score, then only the flagged columns, one
-line each). Pass --full for a complete per-column table.
-"""
+"""Small, plain-text terminal reports for dqlint."""
 from __future__ import annotations
 
-from rich.console import Console
-from rich.table import Table
-from rich.text import Text
-from rich import box
+from typing import Optional
 
-from .core import DataQualityReport
+from .core import ColumnReport, DataQualityReport, OutlierReport
 
-
-def _score_color(score: float) -> str:
-    if score >= 85:
-        return "green"
-    if score >= 60:
-        return "yellow"
-    return "red"
+RULE = "-" * 36
 
 
-def _verdict(score: float) -> str:
-    if score >= 85:
-        return "looks good"
-    if score >= 60:
-        return "a few things worth reviewing"
-    return "needs attention before cleaning"
+def _format_size(size_bytes: Optional[int]) -> str:
+    if size_bytes is None:
+        return "Unknown"
+    units = ("bytes", "KiB", "MiB", "GiB")
+    size = float(size_bytes)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{int(size):,} {unit}" if unit == "bytes" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GiB"
 
 
-def _mark(score: float) -> Text:
-    # A colored bullet, not a pass/fail label -- everything in the "issues"
-    # list has at least one issue, so labeling some of them "OK" would be
-    # contradictory. Color alone carries how serious it is.
-    return Text("\u25cf", style=f"bold {_score_color(score)}")
+def _format_percent(value: float) -> str:
+    return f"{value:.2f}%"
 
 
-def render(report: DataQualityReport, console: Console | None = None, full: bool = False) -> None:
-    console = console or Console()
-    color = _score_color(report.overall_score)
+def _number(value: float) -> str:
+    return f"{value:.6g}"
 
-    console.print()
-    header = Text()
-    header.append(report.file_path, style="bold")
-    header.append(f"   {report.n_rows:,} rows \u00b7 {report.n_cols} cols \u00b7 {report.memory_mb} MB", style="dim")
-    console.print(header)
 
-    if report.n_duplicate_rows:
-        console.print(Text(
-            f"{report.n_duplicate_rows} duplicate rows ({report.pct_duplicate_rows}%)", style="yellow"
-        ))
+def _section(title: str) -> list[str]:
+    return ["", title, RULE, ""]
 
-    score_line = Text()
-    score_line.append("Score  ")
-    score_line.append(f"{report.overall_score}/100", style=f"bold {color}")
-    score_line.append(f"  \u2013 {_verdict(report.overall_score)}", style="dim")
-    console.print(score_line)
-    console.print()
 
-    for issue in report.global_issues:
-        console.print(Text(f"  ! {issue}", style="yellow"))
-    if report.global_issues:
-        console.print()
+def _column_line(column: ColumnReport) -> str:
+    return f"  {column.name:<22} {column.dtype}"
 
-    flagged = [c for c in report.columns if c.issues]
-    clean = [c for c in report.columns if not c.issues]
 
-    if flagged:
-        console.print(Text(f"Issues found ({len(flagged)} of {report.n_cols} columns)", style="bold"))
-        name_width = min(max((len(c.name) for c in report.columns), default=10), 28)
-        for c in sorted(flagged, key=lambda c: c.quality_score):
-            line = Text("  ")
-            line.append(_mark(c.quality_score))
-            line.append("  ")
-            line.append(f"{c.name:<{name_width}}", style="bold")
-            line.append(f"  {c.quality_score:>5.1f}  ", style=_score_color(c.quality_score))
-            line.append(" \u00b7 ".join(c.issues), style="dim")
-            console.print(line)
-        console.print()
-    else:
-        console.print(Text("All columns look clean.", style="bold green"))
-        console.print()
+def _outlier_lines(column: ColumnReport, outliers: OutlierReport) -> list[str]:
+    return [
+        column.name,
+        f"  Method: {outliers.method}",
+        f"  Q1: {_number(outliers.q1)}",
+        f"  Q3: {_number(outliers.q3)}",
+        f"  IQR: {_number(outliers.iqr)}",
+        f"  Lower bound: {_number(outliers.lower_bound)}",
+        f"  Upper bound: {_number(outliers.upper_bound)}",
+        f"  Count: {outliers.count:,} / {outliers.value_count:,} ({_format_percent(outliers.percentage)})",
+        "",
+    ]
 
-    if flagged and clean:
-        console.print(Text(f"{len(clean)} clean: {', '.join(c.name for c in clean)}", style="dim"))
-        console.print()
+
+def render(report: DataQualityReport, full: bool = False) -> str:
+    """Return the concise default report, with factual detail in full mode."""
+    lines = ["dqlint", RULE]
+    lines.extend(
+        [
+            "",
+            "DATASET",
+            f"  File       {report.file_name}",
+            f"  Size       {_format_size(report.file_size_bytes)}",
+            f"  Rows       {report.row_count:,}",
+            f"  Columns    {report.column_count:,}",
+        ]
+    )
+    lines.extend(_section("COLUMNS"))
+    lines.extend(_column_line(column) for column in report.columns)
+    lines.extend(_section("QUALITY"))
+    lines.extend(
+        [
+            f"  Missing values    {report.missing_column_count:,} columns",
+            f"  Duplicate rows    {report.duplicate_row_count:,}",
+            f"  Possible outliers {report.outlier_column_count:,} columns",
+            f"  Empty columns     {report.empty_column_count:,}",
+            f"  Constant columns  {report.constant_column_count:,}",
+            "",
+            RULE,
+        ]
+    )
 
     if not full:
-        console.print(Text("Run with --full to see stats for every column.", style="dim italic"))
-        console.print()
-        return
-
-    table = Table(title="All columns", box=box.SIMPLE_HEAVY, show_lines=False)
-    table.add_column("Column", style="bold")
-    table.add_column("Type")
-    table.add_column("Missing", justify="right")
-    table.add_column("Unique", justify="right")
-    table.add_column("Outliers", justify="right")
-    table.add_column("Score", justify="right")
-
-    for c in report.columns:
-        sc = _score_color(c.quality_score)
-        table.add_row(
-            c.name,
-            c.dtype,
-            f"{c.n_missing} ({c.pct_missing}%)",
-            f"{c.n_unique} ({c.pct_unique}%)",
-            "-" if c.n_outliers is None else str(c.n_outliers),
-            Text(f"{c.quality_score}", style=f"bold {sc}"),
+        lines.extend(
+            [
+                "",
+                "Use:",
+                "",
+                f"  dqlint {report.file_name} --full",
+                "",
+                "for column-level details.",
+            ]
         )
-    console.print(table)
-    console.print()
+        return "\n".join(lines)
+
+    lines.extend(_section("COLUMN OVERVIEW"))
+    lines.append(f"  {'Column':<22} {'Type':<18} {'Missing':>18} {'Unique':>12}")
+    for column in report.columns:
+        missing = f"{column.missing_count:,} ({_format_percent(column.missing_percentage)})"
+        lines.append(
+            f"  {column.name:<22} {column.dtype:<18} {missing:>18} {column.unique_count:>12,}"
+        )
+
+    lines.extend(_section("DUPLICATE ROWS"))
+    lines.extend(
+        [
+            f"  {report.duplicate_row_count:,} / {report.row_count:,} ({_format_percent(report.duplicate_row_percentage)})",
+            "  Method: exact full-row comparison",
+        ]
+    )
+
+    missing_columns = [column for column in report.columns if column.missing_count]
+    lines.extend(_section("MISSING VALUES"))
+    if missing_columns:
+        for column in missing_columns:
+            lines.append(
+                f"  {column.name}: {column.missing_count:,} / {report.row_count:,} "
+                f"({_format_percent(column.missing_percentage)})"
+            )
+    else:
+        lines.append("  No missing values detected.")
+
+    empty_columns = [column for column in report.columns if column.is_empty]
+    lines.extend(_section("EMPTY COLUMNS"))
+    lines.extend(f"  {column.name}" for column in empty_columns)
+    if not empty_columns:
+        lines.append("  None detected.")
+
+    constant_columns = [column for column in report.columns if column.is_constant]
+    lines.extend(_section("CONSTANT COLUMNS"))
+    lines.extend(f"  {column.name}" for column in constant_columns)
+    if not constant_columns:
+        lines.append("  None detected.")
+
+    outlier_columns = [
+        column
+        for column in report.columns
+        if column.outliers is not None and column.outliers.count > 0
+    ]
+    lines.extend(_section("POSSIBLE OUTLIERS"))
+    if outlier_columns:
+        for column in outlier_columns:
+            lines.extend(_outlier_lines(column, column.outliers))
+    else:
+        lines.append("  No values outside the IQR bounds detected.")
+
+    return "\n".join(lines)

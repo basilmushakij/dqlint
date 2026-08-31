@@ -1,14 +1,18 @@
-"""dataqual -- a zero-config data quality checker CLI + dashboard."""
-from .core import load_file, analyze, DataQualityReport, ColumnReport  # noqa: F401
-from .report import build_html, save_html  # noqa: F401
+"""The small, factual dataset inspector behind the dqlint command."""
 
-__version__ = "0.1.0"
+from .core import ColumnReport, DataQualityReport, OutlierReport, analyze, load_file
+from .report import build_html, save_html, save_json
+
+__version__ = "0.2.0"
+
 __all__ = [
-    "load_file",
-    "analyze",
-    "DataQualityReport",
     "ColumnReport",
+    "DataQualityReport",
+    "OutlierReport",
+    "analyze",
     "build_html",
+    "load_file",
     "save_html",
+    "save_json",
     "__version__",
 ]

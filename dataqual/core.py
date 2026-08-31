@@ -1,212 +1,249 @@
-"""
-dataqual.core
-=============
-Core data-quality analysis engine. Pure logic, no printing/formatting here,
-so it can be reused by the terminal reporter, the HTML reporter, or imported
-directly in a notebook / script.
-"""
+"""Deterministic, factual dataset inspection used by every dqlint output."""
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Optional
 
 import pandas as pd
-import numpy as np
+
+SUPPORTED_FORMATS = {".csv", ".tsv", ".xlsx", ".json", ".parquet"}
+IQR_MULTIPLIER = 1.5
 
 
-SUPPORTED_EXTENSIONS = {".csv", ".tsv", ".xlsx", ".xls", ".json", ".parquet"}
+class DataLoadError(Exception):
+    """A short, user-facing error while reading an input dataset."""
+
+    def __init__(self, title: str, reason: str, install: Optional[str] = None):
+        super().__init__(reason)
+        self.title = title
+        self.reason = reason
+        self.install = install
 
 
-def load_file(path: str) -> pd.DataFrame:
-    """Load a tabular file into a pandas DataFrame based on its extension."""
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"File not found: {path}")
+@dataclass
+class OutlierReport:
+    """Values outside the standard 1.5 × IQR bounds for one numeric column."""
 
-    ext = os.path.splitext(path)[1].lower()
-    if ext not in SUPPORTED_EXTENSIONS:
-        raise ValueError(
-            f"Unsupported file type '{ext}'. Supported: {', '.join(sorted(SUPPORTED_EXTENSIONS))}"
-        )
+    q1: float
+    q3: float
+    iqr: float
+    lower_bound: float
+    upper_bound: float
+    count: int
+    value_count: int
+    percentage: float
+    method: str = "IQR (Q1 - 1.5 × IQR to Q3 + 1.5 × IQR)"
 
-    if ext == ".csv":
-        return pd.read_csv(path)
-    if ext == ".tsv":
-        return pd.read_csv(path, sep="\t")
-    if ext in (".xlsx", ".xls"):
-        return pd.read_excel(path)
-    if ext == ".json":
-        return pd.read_json(path)
-    if ext == ".parquet":
-        return pd.read_parquet(path)
-
-    raise ValueError(f"Unsupported file type '{ext}'")
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "method": self.method,
+            "q1": self.q1,
+            "q3": self.q3,
+            "iqr": self.iqr,
+            "lower_bound": self.lower_bound,
+            "upper_bound": self.upper_bound,
+            "count": self.count,
+            "value_count": self.value_count,
+            "percentage": self.percentage,
+        }
 
 
 @dataclass
 class ColumnReport:
     name: str
     dtype: str
-    n_missing: int
-    pct_missing: float
-    n_unique: int
-    pct_unique: float
+    missing_count: int
+    missing_percentage: float
+    unique_count: int
+    is_empty: bool
     is_constant: bool
-    is_high_cardinality: bool
-    numeric_stats: dict[str, Any] | None = None
-    n_outliers: int | None = None
-    top_values: list[tuple[Any, int]] = field(default_factory=list)
-    quality_score: float = 100.0
-    issues: list[str] = field(default_factory=list)
+    outliers: Optional[OutlierReport]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "dtype": self.dtype,
+            "missing_count": self.missing_count,
+            "missing_percentage": self.missing_percentage,
+            "unique_count": self.unique_count,
+            "is_empty": self.is_empty,
+            "is_constant": self.is_constant,
+            "outliers": self.outliers.to_dict() if self.outliers else None,
+        }
 
 
 @dataclass
 class DataQualityReport:
     file_path: str
-    n_rows: int
-    n_cols: int
-    memory_mb: float
-    n_duplicate_rows: int
-    pct_duplicate_rows: float
-    overall_score: float
+    file_name: str
+    file_size_bytes: Optional[int]
+    row_count: int
+    column_count: int
+    duplicate_row_count: int
+    duplicate_row_percentage: float
     columns: list[ColumnReport]
-    global_issues: list[str] = field(default_factory=list)
 
+    @property
+    def missing_column_count(self) -> int:
+        return sum(column.missing_count > 0 for column in self.columns)
 
-HIGH_CARDINALITY_RATIO = 0.9  # unique/rows above this -> likely ID-like column
-OUTLIER_IQR_MULTIPLIER = 1.5
-
-
-def _numeric_stats(series: pd.Series) -> tuple[dict[str, Any], int]:
-    clean = series.dropna()
-    if clean.empty:
-        return {}, 0
-
-    q1, q3 = clean.quantile(0.25), clean.quantile(0.75)
-    iqr = q3 - q1
-    lower = q1 - OUTLIER_IQR_MULTIPLIER * iqr
-    upper = q3 + OUTLIER_IQR_MULTIPLIER * iqr
-    n_outliers = int(((clean < lower) | (clean > upper)).sum())
-
-    stats = {
-        "min": float(clean.min()),
-        "max": float(clean.max()),
-        "mean": float(clean.mean()),
-        "median": float(clean.median()),
-        "std": float(clean.std()) if len(clean) > 1 else 0.0,
-        "q1": float(q1),
-        "q3": float(q3),
-    }
-    return stats, n_outliers
-
-
-def _column_score(pct_missing: float, is_constant: bool,
-                   outlier_ratio: float) -> tuple[float, list[str]]:
-    score = 100.0
-    issues = []
-
-    if pct_missing > 0:
-        penalty = min(40, pct_missing * 0.6)
-        score -= penalty
-        if pct_missing >= 50:
-            issues.append(f"{pct_missing:.1f}% missing (high)")
-        elif pct_missing >= 5:
-            issues.append(f"{pct_missing:.1f}% missing")
-
-    if is_constant:
-        score -= 30
-        issues.append("constant value, no variation")
-
-    if outlier_ratio > 0:
-        penalty = min(20, outlier_ratio * 100 * 0.5)
-        score -= penalty
-        # A handful of extreme values matter even if they're a tiny fraction
-        # of the column, so this is deliberately a low bar (not just >=5%).
-        if outlier_ratio >= 0.01:
-            issues.append(f"outliers detected (~{outlier_ratio*100:.1f}%)")
-
-    return max(0.0, score), issues
-
-
-def analyze(df: pd.DataFrame, file_path: str = "<in-memory>") -> DataQualityReport:
-    n_rows, n_cols = df.shape
-    memory_mb = df.memory_usage(deep=True).sum() / (1024 ** 2)
-
-    n_dup = int(df.duplicated().sum())
-    pct_dup = (n_dup / n_rows * 100) if n_rows else 0.0
-
-    col_reports: list[ColumnReport] = []
-    global_issues: list[str] = []
-
-    if n_rows == 0:
-        global_issues.append("File has no data (0 rows)")
-
-    for col in df.columns:
-        series = df[col]
-        n_missing = int(series.isna().sum())
-        pct_missing = (n_missing / n_rows * 100) if n_rows else 0.0
-        n_unique = int(series.nunique(dropna=True))
-        pct_unique = (n_unique / n_rows * 100) if n_rows else 0.0
-        is_constant = n_unique <= 1 and n_rows > 0
-        is_numeric = pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series)
-        # Continuous numeric columns (e.g. amounts, measurements) are expected
-        # to be near-100% unique -- that's not an "ID column" smell the way it
-        # is for a string/integer column, so only flag high cardinality there.
-        is_high_card = (
-            n_rows > 0
-            and (n_unique / n_rows) >= HIGH_CARDINALITY_RATIO
-            and n_unique > 1
-            and not pd.api.types.is_float_dtype(series)
+    @property
+    def outlier_column_count(self) -> int:
+        return sum(
+            column.outliers is not None and column.outliers.count > 0
+            for column in self.columns
         )
 
-        numeric_stats = None
-        n_outliers = None
-        outlier_ratio = 0.0
-        if is_numeric:
-            numeric_stats, n_outliers = _numeric_stats(series)
-            n_non_null = n_rows - n_missing
-            outlier_ratio = (n_outliers / n_non_null) if n_non_null else 0.0
+    @property
+    def empty_column_count(self) -> int:
+        return sum(column.is_empty for column in self.columns)
 
-        top_values = []
-        if not is_numeric:
-            vc = series.value_counts(dropna=True).head(5)
-            top_values = list(zip(vc.index.tolist(), vc.values.tolist()))
+    @property
+    def constant_column_count(self) -> int:
+        return sum(column.is_constant for column in self.columns)
 
-        score, issues = _column_score(pct_missing, is_constant, outlier_ratio)
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "dataset": {
+                "file": self.file_name,
+                "path": self.file_path,
+                "size_bytes": self.file_size_bytes,
+                "rows": self.row_count,
+                "columns": self.column_count,
+            },
+            "columns": [column.to_dict() for column in self.columns],
+            "quality": {
+                "missing_columns": self.missing_column_count,
+                "duplicate_rows": self.duplicate_row_count,
+                "duplicate_row_percentage": self.duplicate_row_percentage,
+                "outlier_columns": self.outlier_column_count,
+                "empty_columns": self.empty_column_count,
+                "constant_columns": self.constant_column_count,
+            },
+        }
 
-        col_reports.append(ColumnReport(
-            name=str(col),
-            dtype=str(series.dtype),
-            n_missing=n_missing,
-            pct_missing=round(pct_missing, 2),
-            n_unique=n_unique,
-            pct_unique=round(pct_unique, 2),
-            is_constant=is_constant,
-            is_high_cardinality=is_high_card,
-            numeric_stats=numeric_stats,
-            n_outliers=n_outliers,
-            top_values=top_values,
-            quality_score=round(score, 1),
-            issues=issues,
-        ))
 
-    if pct_dup > 0:
-        global_issues.append(f"{n_dup} duplicate rows found ({pct_dup:.1f}%)")
+def load_file(path: str) -> pd.DataFrame:
+    """Load a supported table without inferring or changing its schema."""
+    source = Path(path)
+    if not source.is_file():
+        raise DataLoadError("Unable to read dataset.", f"File not found: {path}")
 
-    if col_reports:
-        overall_score = round(sum(c.quality_score for c in col_reports) / len(col_reports), 1)
-    else:
-        overall_score = 0.0
-    overall_score = max(0.0, overall_score - min(15, pct_dup * 0.3))
+    extension = source.suffix.lower()
+    if extension not in SUPPORTED_FORMATS:
+        raise DataLoadError(
+            "Unable to read dataset.",
+            "Unsupported file format. Supported formats: CSV, TSV, XLSX, JSON, Parquet.",
+        )
+
+    try:
+        if extension == ".csv":
+            return pd.read_csv(source)
+        if extension == ".tsv":
+            return pd.read_csv(source, sep="\t")
+        if extension == ".xlsx":
+            return pd.read_excel(source)
+        if extension == ".json":
+            return pd.read_json(source)
+        return pd.read_parquet(source)
+    except (ImportError, ModuleNotFoundError) as error:
+        if extension == ".xlsx":
+            raise DataLoadError(
+                "Excel support is unavailable.",
+                "XLSX support requires openpyxl.",
+                "pip install dqlint[excel]",
+            ) from error
+        if extension == ".parquet":
+            raise DataLoadError(
+                "Parquet support is unavailable.",
+                "Parquet support requires pyarrow.",
+                "pip install dqlint[parquet]",
+            ) from error
+        raise DataLoadError("Unable to read dataset.", str(error)) from error
+    except pd.errors.EmptyDataError as error:
+        raise DataLoadError(
+            "Unable to read dataset.", "File contains no tabular data."
+        ) from error
+    except Exception as error:
+        raise DataLoadError("Unable to read dataset.", str(error)) from error
+
+
+def _outlier_report(series: pd.Series) -> Optional[OutlierReport]:
+    """Calculate IQR evidence for numeric values; booleans are excluded."""
+    values = series.dropna()
+    if values.empty:
+        return None
+
+    q1 = float(values.quantile(0.25))
+    q3 = float(values.quantile(0.75))
+    iqr = q3 - q1
+    lower_bound = q1 - IQR_MULTIPLIER * iqr
+    upper_bound = q3 + IQR_MULTIPLIER * iqr
+    count = int(((values < lower_bound) | (values > upper_bound)).sum())
+    value_count = int(values.shape[0])
+
+    return OutlierReport(
+        q1=q1,
+        q3=q3,
+        iqr=iqr,
+        lower_bound=lower_bound,
+        upper_bound=upper_bound,
+        count=count,
+        value_count=value_count,
+        percentage=(count / value_count * 100) if value_count else 0.0,
+    )
+
+
+def analyze(
+    dataframe: pd.DataFrame,
+    file_path: str = "<in-memory>",
+    file_size_bytes: Optional[int] = None,
+) -> DataQualityReport:
+    """Inspect a DataFrame using direct, reproducible pandas measurements."""
+    row_count, column_count = dataframe.shape
+    if file_size_bytes is None and os.path.isfile(file_path):
+        file_size_bytes = os.path.getsize(file_path)
+
+    duplicate_row_count = int(dataframe.duplicated().sum())
+    duplicate_row_percentage = (
+        duplicate_row_count / row_count * 100 if row_count else 0.0
+    )
+
+    columns: list[ColumnReport] = []
+    for name in dataframe.columns:
+        series = dataframe[name]
+        missing_count = int(series.isna().sum())
+        unique_count = int(series.nunique(dropna=True))
+        is_empty = row_count > 0 and missing_count == row_count
+        is_constant = unique_count == 1 and not is_empty
+        is_numeric = (
+            pd.api.types.is_numeric_dtype(series)
+            and not pd.api.types.is_bool_dtype(series)
+        )
+        columns.append(
+            ColumnReport(
+                name=str(name),
+                dtype=str(series.dtype),
+                missing_count=missing_count,
+                missing_percentage=(missing_count / row_count * 100)
+                if row_count
+                else 0.0,
+                unique_count=unique_count,
+                is_empty=is_empty,
+                is_constant=is_constant,
+                outliers=_outlier_report(series) if is_numeric else None,
+            )
+        )
 
     return DataQualityReport(
         file_path=file_path,
-        n_rows=n_rows,
-        n_cols=n_cols,
-        memory_mb=round(memory_mb, 3),
-        n_duplicate_rows=n_dup,
-        pct_duplicate_rows=round(pct_dup, 2),
-        overall_score=round(overall_score, 1),
-        columns=col_reports,
-        global_issues=global_issues,
+        file_name=Path(file_path).name,
+        file_size_bytes=file_size_bytes,
+        row_count=row_count,
+        column_count=column_count,
+        duplicate_row_count=duplicate_row_count,
+        duplicate_row_percentage=duplicate_row_percentage,
+        columns=columns,
     )
