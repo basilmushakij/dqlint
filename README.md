@@ -20,7 +20,7 @@ pip install .
 ```bash
 dqlint data.csv                          # concise summary
 dqlint data.csv --full                   # every column, plus duplicate/outlier evidence
-dqlint data.csv --column            # full detail for just one column
+dqlint data.csv --column  columnname           # full detail for just one column
 ```
 
 Optional formats:
